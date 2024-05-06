@@ -14,7 +14,7 @@ import { Delegate } from '../helpers/delegate';
 import { IDestroyable } from '../helpers/idestroyable';
 import { ISubscription } from '../helpers/isubscription';
 
-import { ChartModel, TrackingModeExitMode } from '../model/chart-model';
+import { IChartModelBase, TrackingModeExitMode } from '../model/chart-model';
 import { Coordinate } from '../model/coordinate';
 import { IDataSource } from '../model/idata-source';
 import { InvalidationLevel } from '../model/invalidate-mask';
@@ -26,8 +26,8 @@ import { TouchMouseEventData } from '../model/touch-mouse-event-data';
 import { IPaneRenderer } from '../renderers/ipane-renderer';
 import { IPaneView } from '../views/pane/ipane-view';
 
-import { createBoundCanvas } from './canvas-utils';
-import { ChartWidget } from './chart-widget';
+import { createBoundCanvas, releaseCanvas } from './canvas-utils';
+import { IChartWidgetBase } from './chart-widget';
 import { drawBackground, drawForeground, DrawFunction, drawSourcePaneViews } from './draw-functions';
 import { IPaneViewsGetter } from './ipane-view-getter';
 import { MouseEventHandler, MouseEventHandlerEventBase, MouseEventHandlerMouseEvent, MouseEventHandlers, MouseEventHandlerTouchEvent, Position, TouchMouseEvent } from './mouse-event-handler';
@@ -61,7 +61,7 @@ interface StartScrollPosition extends Point {
 }
 
 export class PaneWidget implements IDestroyable, MouseEventHandlers {
-	private readonly _chart: ChartWidget;
+	private readonly _chart: IChartWidgetBase;
 	private _state: Pane | null;
 	private _size: Size = size({ width: 0, height: 0 });
 	private _leftPriceAxisWidget: PriceAxisWidget | null = null;
@@ -76,6 +76,7 @@ export class PaneWidget implements IDestroyable, MouseEventHandlers {
 	private _startScrollingPos: StartScrollPosition | null = null;
 	private _isScrolling: boolean = false;
 	private _clicked: Delegate<TimePointIndex | null, Point, TouchMouseEventData> = new Delegate();
+	private _dblClicked: Delegate<TimePointIndex | null, Point, TouchMouseEventData> = new Delegate();
 	private _prevPinchScale: number = 0;
 	private _longTap: boolean = false;
 	private _startTrackPoint: Point | null = null;
@@ -86,7 +87,7 @@ export class PaneWidget implements IDestroyable, MouseEventHandlers {
 
 	private _isSettingSize: boolean = false;
 
-	public constructor(chart: ChartWidget, state: Pane) {
+	public constructor(chart: IChartWidgetBase, state: Pane) {
 		this._chart = chart;
 
 		this._state = state;
@@ -151,9 +152,11 @@ export class PaneWidget implements IDestroyable, MouseEventHandlers {
 		}
 
 		this._topCanvasBinding.unsubscribeSuggestedBitmapSizeChanged(this._topCanvasSuggestedBitmapSizeChangedHandler);
+		releaseCanvas(this._topCanvasBinding.canvasElement);
 		this._topCanvasBinding.dispose();
 
 		this._canvasBinding.unsubscribeSuggestedBitmapSizeChanged(this._canvasSuggestedBitmapSizeChangedHandler);
+		releaseCanvas(this._canvasBinding.canvasElement);
 		this._canvasBinding.dispose();
 
 		if (this._state !== null) {
@@ -181,7 +184,7 @@ export class PaneWidget implements IDestroyable, MouseEventHandlers {
 		this.updatePriceAxisWidgetsStates();
 	}
 
-	public chart(): ChartWidget {
+	public chart(): IChartWidgetBase {
 		return this._chart;
 	}
 
@@ -266,6 +269,17 @@ export class PaneWidget implements IDestroyable, MouseEventHandlers {
 		this._fireClickedDelegate(event);
 	}
 
+	public mouseDoubleClickEvent(event: MouseEventHandlerMouseEvent | MouseEventHandlerTouchEvent): void {
+		if (this._state === null) {
+			return;
+		}
+		this._fireMouseClickDelegate(this._dblClicked, event);
+	}
+
+	public doubleTapEvent(event: MouseEventHandlerTouchEvent): void {
+		this.mouseDoubleClickEvent(event);
+	}
+
 	public pressedMouseMoveEvent(event: MouseEventHandlerMouseEvent): void {
 		this._onMouseEvent();
 		this._pressedMouseTouchMoveEvent(event);
@@ -313,6 +327,10 @@ export class PaneWidget implements IDestroyable, MouseEventHandlers {
 		return this._clicked;
 	}
 
+	public dblClicked(): ISubscription<TimePointIndex | null, Point, TouchMouseEventData> {
+		return this._dblClicked;
+	}
+
 	public pinchStartEvent(): void {
 		this._prevPinchScale = 1;
 		this._model().stopTimeScaleAnimation();
@@ -335,8 +353,8 @@ export class PaneWidget implements IDestroyable, MouseEventHandlers {
 
 		this._mouseTouchDownEvent();
 
-		if (this._startTrackPoint !== null) {
-			const crosshair = this._model().crosshairSource();
+		const crosshair = this._model().crosshairSource();
+		if (this._startTrackPoint !== null && crosshair.visible()) {
 			this._initCrosshairPosition = { x: crosshair.appliedX(), y: crosshair.appliedY() };
 			this._startTrackPoint = { x: event.localX, y: event.localY };
 		}
@@ -501,10 +519,14 @@ export class PaneWidget implements IDestroyable, MouseEventHandlers {
 	}
 
 	private _fireClickedDelegate(event: MouseEventHandlerEventBase): void {
+		this._fireMouseClickDelegate(this._clicked, event);
+	}
+
+	private _fireMouseClickDelegate(delegate: Delegate<TimePointIndex | null, Point, TouchMouseEventData>, event: MouseEventHandlerEventBase): void {
 		const x = event.localX;
 		const y = event.localY;
-		if (this._clicked.hasListeners()) {
-			this._clicked.fire(this._model().timeScale().coordinateToIndex(x), { x, y }, event);
+		if (delegate.hasListeners()) {
+			delegate.fire(this._model().timeScale().coordinateToIndex(x), { x, y }, event);
 		}
 	}
 
@@ -634,7 +656,7 @@ export class PaneWidget implements IDestroyable, MouseEventHandlers {
 		this._initCrosshairPosition = { x: crosshair.appliedX(), y: crosshair.appliedY() };
 	}
 
-	private _model(): ChartModel {
+	private _model(): IChartModelBase {
 		return this._chart.model();
 	}
 

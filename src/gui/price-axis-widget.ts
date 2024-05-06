@@ -14,7 +14,7 @@ import { clearRect, clearRectWithGradient } from '../helpers/canvas-helpers';
 import { IDestroyable } from '../helpers/idestroyable';
 import { makeFont } from '../helpers/make-font';
 
-import { ChartOptionsInternal } from '../model/chart-model';
+import { ChartOptionsInternalBase } from '../model/chart-model';
 import { Coordinate } from '../model/coordinate';
 import { IDataSource } from '../model/idata-source';
 import { InvalidationLevel } from '../model/invalidate-mask';
@@ -29,7 +29,7 @@ import { PriceAxisRendererOptionsProvider } from '../renderers/price-axis-render
 import { IAxisView } from '../views/pane/iaxis-view';
 import { IPriceAxisView } from '../views/price-axis/iprice-axis-view';
 
-import { createBoundCanvas } from './canvas-utils';
+import { createBoundCanvas, releaseCanvas } from './canvas-utils';
 import { IPriceAxisViewsGetter } from './iaxis-view-getters';
 import { suggestPriceScaleWidth } from './internal-layout-sizes-hints';
 import { MouseEventHandler, MouseEventHandlers, TouchMouseEvent } from './mouse-event-handler';
@@ -68,7 +68,7 @@ function buildPriceAxisViewsGetter(
 
 export class PriceAxisWidget implements IDestroyable {
 	private readonly _pane: PaneWidget;
-	private readonly _options: Readonly<ChartOptionsInternal>;
+	private readonly _options: Readonly<ChartOptionsInternalBase>;
 	private readonly _layoutOptions: Readonly<LayoutOptions>;
 	private readonly _rendererOptionsProvider: PriceAxisRendererOptionsProvider;
 	private readonly _isLeft: boolean;
@@ -94,7 +94,7 @@ export class PriceAxisWidget implements IDestroyable {
 	private _sourceTopPaneViews: IPriceAxisViewsGetter;
 	private _sourceBottomPaneViews: IPriceAxisViewsGetter;
 
-	public constructor(pane: PaneWidget, options: Readonly<ChartOptionsInternal>, rendererOptionsProvider: PriceAxisRendererOptionsProvider, side: PriceAxisWidgetSide) {
+	public constructor(pane: PaneWidget, options: Readonly<ChartOptionsInternalBase>, rendererOptionsProvider: PriceAxisRendererOptionsProvider, side: PriceAxisWidgetSide) {
 		this._pane = pane;
 		this._options = options;
 		this._layoutOptions = options.layout;
@@ -145,7 +145,7 @@ export class PriceAxisWidget implements IDestroyable {
 			this._topCanvasBinding.canvasElement,
 			handler,
 			{
-				treatVertTouchDragAsPageScroll: () => false,
+				treatVertTouchDragAsPageScroll: () => !this._options.handleScroll.vertTouchDrag,
 				treatHorzTouchDragAsPageScroll: () => true,
 			}
 		);
@@ -155,9 +155,11 @@ export class PriceAxisWidget implements IDestroyable {
 		this._mouseEventHandler.destroy();
 
 		this._topCanvasBinding.unsubscribeSuggestedBitmapSizeChanged(this._topCanvasSuggestedBitmapSizeChangedHandler);
+		releaseCanvas(this._topCanvasBinding.canvasElement);
 		this._topCanvasBinding.dispose();
 
 		this._canvasBinding.unsubscribeSuggestedBitmapSizeChanged(this._canvasSuggestedBitmapSizeChangedHandler);
+		releaseCanvas(this._canvasBinding.canvasElement);
 		this._canvasBinding.dispose();
 
 		if (this._priceScale !== null) {
