@@ -48,11 +48,8 @@ export type TopBottomRadii = [number, number];
 export type LeftTopRightTopRightBottomLeftBottomRadii = [number, number, number, number];
 export type DrawRoundRectRadii = number | TopBottomRadii | LeftTopRightTopRightBottomLeftBottomRadii;
 
-function changeBorderRadius(borderRadius: DrawRoundRectRadii, offset: number): typeof borderRadius {
-	if (Array.isArray(borderRadius)) {
-		return borderRadius.map((x: number) => x === 0 ? x : x + offset) as typeof borderRadius;
-	}
-	return borderRadius + offset;
+function changeBorderRadius(borderRadius: LeftTopRightTopRightBottomLeftBottomRadii, offset: number): typeof borderRadius {
+	return borderRadius.map((x: number) => x === 0 ? x : x + offset) as typeof borderRadius;
 }
 
 export function drawRoundRect(
@@ -62,55 +59,38 @@ export function drawRoundRect(
 	y: number,
 	w: number,
 	h: number,
-	radii: DrawRoundRectRadii
+	radii: LeftTopRightTopRightBottomLeftBottomRadii
 ): void {
-	let radiusLeftTop: number;
-	let radiusRightTop: number;
-	let radiusRightBottom: number;
-	let radiusLeftBottom: number;
-
-	if (!Array.isArray(radii)) {
-		const oneRadius = Math.max(0, radii);
-		radiusLeftTop = oneRadius;
-		radiusRightTop = oneRadius;
-		radiusRightBottom = oneRadius;
-		radiusLeftBottom = oneRadius;
-	} else if (radii.length === 2) {
-		const cornerRadius1 = Math.max(0, radii[0]);
-		const cornerRadius2 = Math.max(0, radii[1]);
-		radiusLeftTop = cornerRadius1;
-		radiusRightTop = cornerRadius1;
-		radiusRightBottom = cornerRadius2;
-		radiusLeftBottom = cornerRadius2;
-	} else if (radii.length === 4) {
-		radiusLeftTop = Math.max(0, radii[0]);
-		radiusRightTop = Math.max(0, radii[1]);
-		radiusRightBottom = Math.max(0, radii[2]);
-		radiusLeftBottom = Math.max(0, radii[3]);
-	} else {
-		throw new Error(`Wrong border radius - it should be like css border radius`);
-	}
-
+	/**
+	 * As of May 2023, all of the major browsers now support ctx.roundRect() so we should
+	 * be able to switch to the native version soon.
+	 */
 	ctx.beginPath();
-	ctx.moveTo(x + radiusLeftTop, y);
-	ctx.lineTo(x + w - radiusRightTop, y);
-	if (radiusRightTop !== 0) {
-		ctx.arcTo(x + w, y, x + w, y + radiusRightTop, radiusRightTop);
+	if (ctx.roundRect) {
+		ctx.roundRect(x, y, w, h, radii);
+		return;
+	}
+	/*
+	 * Deprecate the rest in v5.
+	 */
+	ctx.lineTo(x + w - radii[1], y);
+	if (radii[1] !== 0) {
+		ctx.arcTo(x + w, y, x + w, y + radii[1], radii[1]);
 	}
 
-	ctx.lineTo(x + w, y + h - radiusRightBottom);
-	if (radiusRightBottom !== 0) {
-		ctx.arcTo(x + w, y + h, x + w - radiusRightBottom, y + h, radiusRightBottom);
+	ctx.lineTo(x + w, y + h - radii[2]);
+	if (radii[2] !== 0) {
+		ctx.arcTo(x + w, y + h, x + w - radii[2], y + h, radii[2]);
 	}
 
-	ctx.lineTo(x + radiusLeftBottom, y + h);
-	if (radiusLeftBottom !== 0) {
-		ctx.arcTo(x, y + h, x, y + h - radiusLeftBottom, radiusLeftBottom);
+	ctx.lineTo(x + radii[3], y + h);
+	if (radii[3] !== 0) {
+		ctx.arcTo(x, y + h, x, y + h - radii[3], radii[3]);
 	}
 
-	ctx.lineTo(x, y + radiusLeftTop);
-	if (radiusLeftTop !== 0) {
-		ctx.arcTo(x, y, x + radiusLeftTop, y, radiusLeftTop);
+	ctx.lineTo(x, y + radii[0]);
+	if (radii[0] !== 0) {
+		ctx.arcTo(x, y, x + radii[0], y, radii[0]);
 	}
 }
 
@@ -151,8 +131,16 @@ function drawDragHandle(ctx: CanvasRenderingContext2D, x: number, y: number, sid
 	ctx.stroke();
 }
 
+/**
+ * Draws a rounded rect with a border.
+ *
+ * This function assumes that the colors will be solid, without
+ * any alpha. (This allows us to fix a rendering artefact.)
+ *
+ * @param outerBorderRadius - The radius of the border (outer edge)
+ */
 // eslint-disable-next-line max-params
-export function drawRoundRectWithInnerBorder(
+export function drawRoundRectWithBorder(
 	ctx: CanvasRenderingContext2D,
 	left: number,
 	top: number,
@@ -160,7 +148,7 @@ export function drawRoundRectWithInnerBorder(
 	height: number,
 	backgroundColor: string,
 	borderWidth: number = 0,
-	borderRadius: DrawRoundRectRadii = 0,
+	outerBorderRadius: LeftTopRightTopRightBottomLeftBottomRadii = [0, 0, 0, 0],
 	borderColor: string = '',
  textColor: string = '#FFFFFF',
  draggable: boolean = false,
@@ -170,7 +158,7 @@ export function drawRoundRectWithInnerBorder(
 	ctx.save();
 
 	if (!borderWidth || !borderColor || borderColor === backgroundColor) {
-		drawRoundRect(ctx, left, top, width, height, borderRadius);
+		drawRoundRect(ctx, left, top, width, height, outerBorderRadius);
 		ctx.fillStyle = backgroundColor;
 		ctx.fill();
 		ctx.restore();
@@ -179,13 +167,16 @@ export function drawRoundRectWithInnerBorder(
 
 	const halfBorderWidth = borderWidth / 2;
 	const dragHandleSize = draggable ? DRAG_HANDLE_SIZE : 0;
+	const radii = changeBorderRadius(outerBorderRadius, - halfBorderWidth);
 
-	// Draw body
+	drawRoundRect(ctx, left + halfBorderWidth, top + halfBorderWidth, width - borderWidth, height - borderWidth, radii);
+
 	if (backgroundColor !== 'transparent') {
 		const offsetRight = closeButton ? ADD_BUTTON_SIZE + dragHandleSize + 1 : 0;
 		const fixedWidth = closeButton ? width + dragHandleSize : width;
-		const innerRadii = changeBorderRadius(borderRadius, - borderWidth);
+		const innerRadii = changeBorderRadius(outerBorderRadius, - borderWidth);
 		drawRoundRect(ctx, left + borderWidth - offsetRight, top + borderWidth, fixedWidth - borderWidth * 2, height - borderWidth * 2, innerRadii);
+
 		ctx.fillStyle = backgroundColor;
 		ctx.fill();
 		if (draggable) {
@@ -196,13 +187,7 @@ export function drawRoundRectWithInnerBorder(
 		}
 	}
 
-	// Draw border
 	if (borderColor !== 'transparent') {
-		const offsetRight = closeButton ? ADD_BUTTON_SIZE + dragHandleSize + 1 : 0;
-		const fixedWidth = closeButton ? width + dragHandleSize : width;
-		const outerRadii = changeBorderRadius(borderRadius, - halfBorderWidth);
-		drawRoundRect(ctx, left + halfBorderWidth - offsetRight, top + halfBorderWidth, fixedWidth - borderWidth, height - borderWidth, outerRadii);
-
 		ctx.lineWidth = borderWidth;
 		ctx.strokeStyle = borderColor;
 		ctx.closePath();

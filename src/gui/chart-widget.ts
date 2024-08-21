@@ -8,10 +8,11 @@ import { ISubscription } from '../helpers/isubscription';
 import { warn } from '../helpers/logger';
 import { DeepPartial } from '../helpers/strict-type-checks';
 
-import { ChartModel, ChartOptionsInternal } from '../model/chart-model';
+import { ChartModel, ChartOptionsInternal, ChartOptionsInternalBase, IChartModelBase } from '../model/chart-model';
 import { Coordinate } from '../model/coordinate';
 import { CustomPriceLine } from '../model/custom-price-line';
 import { DefaultPriceScaleId } from '../model/default-price-scale';
+import { IHorzScaleBehavior } from '../model/ihorz-scale-behavior';
 import {
 	InvalidateMask,
 	InvalidationLevel,
@@ -21,21 +22,20 @@ import {
 import { Point } from '../model/point';
 import { Series } from '../model/series';
 import { SeriesPlotRow } from '../model/series-data';
-import { OriginalTime, TimePointIndex } from '../model/time-data';
+import { SeriesType } from '../model/series-options';
+import { TimePointIndex } from '../model/time-data';
 import { TouchMouseEventData } from '../model/touch-mouse-event-data';
 
 import { suggestChartSize, suggestPriceScaleWidth, suggestTimeScaleHeight } from './internal-layout-sizes-hints';
 import { PaneWidget } from './pane-widget';
 import { TimeAxisWidget } from './time-axis-widget';
 
-// import { PaneSeparator, SEPARATOR_HEIGHT } from './pane-separator';
-
 export interface MouseEventParamsImpl {
-	time?: OriginalTime;
+	originalTime?: unknown;
 	index?: TimePointIndex;
 	point?: Point;
-	seriesData: Map<Series, SeriesPlotRow>;
-	hoveredSeries?: Series;
+	seriesData: Map<Series<SeriesType>, SeriesPlotRow<SeriesType>>;
+	hoveredSeries?: Series<SeriesType>;
 	hoveredObject?: string;
 	touchMouseEventData?: TouchMouseEventData;
 }
@@ -57,11 +57,19 @@ export type CustomPriceLineClickedEventParamsImplSupplier = () => CustomPriceLin
 
 const windowsChrome = isChromiumBased() && isWindows();
 
-export class ChartWidget implements IDestroyable {
-	private readonly _options: ChartOptionsInternal;
+export interface IChartWidgetBase {
+	getPriceAxisWidth(position: DefaultPriceScaleId): number;
+	model(): IChartModelBase;
+	paneWidgets(): PaneWidget[];
+	options(): ChartOptionsInternalBase;
+	setCursorStyle(style: string | null): void;
+}
+
+export class ChartWidget<HorzScaleItem> implements IDestroyable, IChartWidgetBase {
+	private readonly _options: ChartOptionsInternal<HorzScaleItem>;
 	private _paneWidgets: PaneWidget[] = [];
 	// private _paneSeparators: PaneSeparator[] = [];
-	private readonly _model: ChartModel;
+	private readonly _model: ChartModel<HorzScaleItem>;
 	private _drawRafId: number = 0;
 	private _height: number = 0;
 	private _width: number = 0;
@@ -69,10 +77,11 @@ export class ChartWidget implements IDestroyable {
 	private _rightPriceAxisWidth: number = 0;
 	private _element: HTMLDivElement;
 	private readonly _tableElement: HTMLElement;
-	private _timeAxisWidget: TimeAxisWidget;
+	private _timeAxisWidget: TimeAxisWidget<HorzScaleItem>;
 	private _invalidateMask: InvalidateMask | null = null;
 	private _drawPlanned: boolean = false;
 	private _clicked: Delegate<MouseEventParamsImplSupplier> = new Delegate();
+	private _dblClicked: Delegate<MouseEventParamsImplSupplier> = new Delegate();
 	private _crosshairMoved: Delegate<MouseEventParamsImplSupplier> = new Delegate();
 	private _customPriceLineDragged: Delegate<CustomPriceLineDraggedEventParamsImplSupplier> = new Delegate();
 	private _customPriceLineClicked: Delegate<CustomPriceLineClickedEventParamsImplSupplier> = new Delegate();
@@ -83,9 +92,12 @@ export class ChartWidget implements IDestroyable {
 	private _container: HTMLElement;
 	private _cursorStyleOverride: string | null = null;
 
-	public constructor(container: HTMLElement, options: ChartOptionsInternal) {
+	private readonly _horzScaleBehavior: IHorzScaleBehavior<HorzScaleItem>;
+
+	public constructor(container: HTMLElement, options: ChartOptionsInternal<HorzScaleItem>, horzScaleBehavior: IHorzScaleBehavior<HorzScaleItem>) {
 		this._container = container;
 		this._options = options;
+		this._horzScaleBehavior = horzScaleBehavior;
 
 		this._element = document.createElement('div');
 		this._element.classList.add('tv-lightweight-charts');
@@ -105,14 +117,15 @@ export class ChartWidget implements IDestroyable {
 		}
 		this._model = new ChartModel(
 			this._invalidateHandler.bind(this),
-			this._options
+			this._options,
+			horzScaleBehavior
 		);
 		this.model().crosshairMoved().subscribe(this._onPaneWidgetCrosshairMoved.bind(this), this);
 		this.model().customPriceLineDragged().subscribe(this._onCustomPriceLineDragged.bind(this), this);
 		this.model().customPriceLineClicked().subscribe(this._onCustomPriceLineClicked.bind(this), this);
 		this.model().addButtonClicked().subscribe(this._onAddButtonClicked.bind(this), this);
 
-		this._timeAxisWidget = new TimeAxisWidget(this);
+		this._timeAxisWidget = new TimeAxisWidget(this, this._horzScaleBehavior);
 		this._tableElement.appendChild(this._timeAxisWidget.getElement());
 
 		const usedObserver = options.autoSize && this._installObserver();
@@ -141,11 +154,11 @@ export class ChartWidget implements IDestroyable {
 		this._model.priceScalesOptionsChanged().subscribe(this._model.fullUpdate.bind(this._model), this);
 	}
 
-	public model(): ChartModel {
+	public model(): ChartModel<HorzScaleItem> {
 		return this._model;
 	}
 
-	public options(): Readonly<ChartOptionsInternal> {
+	public options(): Readonly<ChartOptionsInternal<HorzScaleItem>> {
 		return this._options;
 	}
 
@@ -153,7 +166,7 @@ export class ChartWidget implements IDestroyable {
 		return this._paneWidgets;
 	}
 
-	public timeAxisWidget(): TimeAxisWidget {
+	public timeAxisWidget(): TimeAxisWidget<HorzScaleItem> {
 		return this._timeAxisWidget;
 	}
 
@@ -173,6 +186,7 @@ export class ChartWidget implements IDestroyable {
 		for (const paneWidget of this._paneWidgets) {
 			this._tableElement.removeChild(paneWidget.getElement());
 			paneWidget.clicked().unsubscribeAll(this);
+			paneWidget.dblClicked().unsubscribeAll(this);
 			paneWidget.destroy();
 		}
 		this._paneWidgets = [];
@@ -190,6 +204,7 @@ export class ChartWidget implements IDestroyable {
 
 		this._crosshairMoved.destroy();
 		this._clicked.destroy();
+		this._dblClicked.destroy();
 
 		this._uninstallObserver();
 	}
@@ -234,7 +249,7 @@ export class ChartWidget implements IDestroyable {
 		}
 	}
 
-	public applyOptions(options: DeepPartial<ChartOptionsInternal>): void {
+	public applyOptions(options: DeepPartial<ChartOptionsInternal<HorzScaleItem>>): void {
 		const currentlyHasMouseWheelListener = shouldSubscribeMouseWheel(this._options);
 
 		// we don't need to merge options here because it's done in chart model
@@ -254,6 +269,10 @@ export class ChartWidget implements IDestroyable {
 
 	public clicked(): ISubscription<MouseEventParamsImplSupplier> {
 		return this._clicked;
+	}
+
+	public dblClicked(): ISubscription<MouseEventParamsImplSupplier> {
+		return this._dblClicked;
 	}
 
 	public crosshairMoved(): ISubscription<MouseEventParamsImplSupplier> {
@@ -332,8 +351,13 @@ export class ChartWidget implements IDestroyable {
 		return this._cursorStyleOverride;
 	}
 
+	public paneSize(): Size {
+		// we currently only support a single pane.
+		return ensureDefined(this._paneWidgets[0]).getSize();
+	}
+
 	// eslint-disable-next-line complexity
-	private _applyAutoSizeOptions(options: DeepPartial<ChartOptionsInternal>): void {
+	private _applyAutoSizeOptions(options: DeepPartial<ChartOptionsInternal<HorzScaleItem>>): void {
 		if (options.autoSize === undefined && this._observer && (options.width !== undefined || options.height !== undefined)) {
 			warn(`You should turn autoSize off explicitly before specifying sizes; try adding options.autoSize: false to new options`);
 			return;
@@ -459,10 +483,18 @@ export class ChartWidget implements IDestroyable {
 
 		for (const paneWidget of this._paneWidgets) {
 			if (this._isLeftAxisVisible()) {
-				leftPriceAxisWidth = Math.max(leftPriceAxisWidth, ensureNotNull(paneWidget.leftPriceAxisWidget()).optimalWidth());
+				leftPriceAxisWidth = Math.max(
+					leftPriceAxisWidth,
+					ensureNotNull(paneWidget.leftPriceAxisWidget()).optimalWidth(),
+					this._options.leftPriceScale.minimumWidth
+				);
 			}
 			if (this._isRightAxisVisible()) {
-				rightPriceAxisWidth = Math.max(rightPriceAxisWidth, ensureNotNull(paneWidget.rightPriceAxisWidget()).optimalWidth());
+				rightPriceAxisWidth = Math.max(
+					rightPriceAxisWidth,
+					ensureNotNull(paneWidget.rightPriceAxisWidget()).optimalWidth(),
+					this._options.rightPriceScale.minimumWidth
+				);
 			}
 			totalStretch += paneWidget.stretchFactor();
 		}
@@ -479,7 +511,7 @@ export class ChartWidget implements IDestroyable {
 		// const separatorHeight = SEPARATOR_HEIGHT;
 		const separatorsHeight = 0; // separatorHeight * separatorCount;
 		const timeAxisVisible = this._options.timeScale.visible;
-		let timeAxisHeight = timeAxisVisible ? this._timeAxisWidget.optimalHeight() : 0;
+		let timeAxisHeight = timeAxisVisible ? Math.max(this._timeAxisWidget.optimalHeight(), this._options.timeScale.minimumHeight) : 0;
 		timeAxisHeight = suggestTimeScaleHeight(timeAxisHeight);
 
 		const otherWidgetHeight = separatorsHeight + timeAxisHeight;
@@ -718,6 +750,7 @@ export class ChartWidget implements IDestroyable {
 			const paneWidget = ensureDefined(this._paneWidgets.pop());
 			this._tableElement.removeChild(paneWidget.getElement());
 			paneWidget.clicked().unsubscribeAll(this);
+			paneWidget.dblClicked().unsubscribeAll(this);
 			paneWidget.destroy();
 
 			// const paneSeparator = this._paneSeparators.pop();
@@ -730,6 +763,7 @@ export class ChartWidget implements IDestroyable {
 		for (let i = actualPaneWidgetsCount; i < targetPaneWidgetsCount; i++) {
 			const paneWidget = new PaneWidget(this, panes[i]);
 			paneWidget.clicked().subscribe(this._onPaneWidgetClicked.bind(this), this);
+			paneWidget.dblClicked().subscribe(this._onPaneWidgetDblClicked.bind(this), this);
 
 			this._paneWidgets.push(paneWidget);
 
@@ -763,10 +797,10 @@ export class ChartWidget implements IDestroyable {
 		point: Point | null,
 		event: TouchMouseEventData | null
 	): MouseEventParamsImpl {
-		const seriesData = new Map<Series, SeriesPlotRow>();
+		const seriesData = new Map<Series<SeriesType>, SeriesPlotRow<SeriesType>>();
 		if (index !== null) {
 			const serieses = this._model.serieses();
-			serieses.forEach((s: Series) => {
+			serieses.forEach((s: Series<SeriesType>) => {
 				// TODO: replace with search left
 				const data = s.bars().search(index);
 				if (data !== null) {
@@ -774,7 +808,7 @@ export class ChartWidget implements IDestroyable {
 				}
 			});
 		}
-		let clientTime: OriginalTime | undefined;
+		let clientTime: unknown | undefined;
 		if (index !== null) {
 			const timePoint = this._model.timeScale().indexToTimeScalePoint(index)?.originalTime;
 			if (timePoint !== undefined) {
@@ -793,7 +827,7 @@ export class ChartWidget implements IDestroyable {
 			: undefined;
 
 		return {
-			time: clientTime,
+			originalTime: clientTime,
 			index: index ?? undefined,
 			point: point ?? undefined,
 			hoveredSeries,
@@ -822,6 +856,14 @@ export class ChartWidget implements IDestroyable {
 		event: TouchMouseEventData
 	): void {
 		this._clicked.fire(() => this._getMouseEventParamsImpl(time, point, event));
+	}
+
+	private _onPaneWidgetDblClicked(
+		time: TimePointIndex | null,
+		point: Point | null,
+		event: TouchMouseEventData
+	): void {
+		this._dblClicked.fire(() => this._getMouseEventParamsImpl(time, point, event));
 	}
 
 	private _onPaneWidgetCrosshairMoved(
@@ -896,6 +938,6 @@ function disableSelection(element: HTMLElement): void {
 	(element.style as any).webkitTapHighlightColor = 'transparent';
 }
 
-function shouldSubscribeMouseWheel(options: ChartOptionsInternal): boolean {
+function shouldSubscribeMouseWheel<HorzScaleItem>(options: ChartOptionsInternal<HorzScaleItem>): boolean {
 	return Boolean(options.handleScroll.mouseWheel || options.handleScale.mouseWheel);
 }

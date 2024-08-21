@@ -1,6 +1,6 @@
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
 
-import { ChartModel } from '../../model/chart-model';
+import { IChartModelBase } from '../../model/chart-model';
 import { IPriceDataSource } from '../../model/iprice-data-source';
 import { PriceLineOptions } from '../../model/price-line-options';
 import { TextWidthCache } from '../../model/text-width-cache';
@@ -48,7 +48,7 @@ export class PanePriceAxisView implements IPaneView {
 	private _priceAxisView: IPriceAxisView;
 	private readonly _textWidthCache: TextWidthCache;
 	private readonly _dataSource: IPriceDataSource;
-	private readonly _chartModel: ChartModel;
+	private readonly _chartModel: IChartModelBase;
 	private readonly _renderer: PanePriceAxisViewRenderer;
 	private readonly _order: any;
 	private readonly _alert: any;
@@ -58,7 +58,7 @@ export class PanePriceAxisView implements IPaneView {
 	private readonly _iconColor?: string;
 	private _fontSize: number;
 
-	public constructor(priceAxisView: IPriceAxisView, dataSource: IPriceDataSource, chartModel: ChartModel, options?: PriceLineOptions) {
+	public constructor(priceAxisView: IPriceAxisView, dataSource: IPriceDataSource, chartModel: IChartModelBase, options?: PriceLineOptions) {
 		this._priceAxisView = priceAxisView;
 		this._textWidthCache = new TextWidthCache(50); // when should we clear cache?
 		this._dataSource = dataSource;

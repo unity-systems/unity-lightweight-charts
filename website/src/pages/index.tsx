@@ -198,8 +198,8 @@ function Index(): React.JSX.Element {
 		<>
 			{showBanner ? (
 				<Banner
-					text="Big news! Version 4.0 of Lightweight Charts™ is now available"
-					link="https://github.com/tradingview/lightweight-charts/releases/tag/v4.0.0"
+					text="Exciting Update: Version 4.1 now available, introducing plugin support for enhanced functionality."
+					link="https://tradingview.github.io/lightweight-charts/docs/release-notes#410"
 					linkText="Read more"
 				/>
 			) : (

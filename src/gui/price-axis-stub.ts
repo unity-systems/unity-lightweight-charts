@@ -10,11 +10,11 @@ import {
 import { clearRect } from '../helpers/canvas-helpers';
 import { IDestroyable } from '../helpers/idestroyable';
 
-import { ChartOptionsInternal } from '../model/chart-model';
+import { ChartOptionsBase } from '../model/chart-model';
 import { InvalidationLevel } from '../model/invalidate-mask';
 import { PriceAxisRendererOptionsProvider } from '../renderers/price-axis-renderer-options-provider';
 
-import { createBoundCanvas } from './canvas-utils';
+import { createBoundCanvas, releaseCanvas } from './canvas-utils';
 import { PriceAxisWidgetSide } from './price-axis-widget';
 
 export interface PriceAxisStubParams {
@@ -30,7 +30,7 @@ export class PriceAxisStub implements IDestroyable {
 
 	private readonly _rendererOptionsProvider: PriceAxisRendererOptionsProvider;
 
-	private _options: ChartOptionsInternal;
+	private _options: ChartOptionsBase;
 
 	private _invalidated: boolean = true;
 
@@ -41,7 +41,7 @@ export class PriceAxisStub implements IDestroyable {
 
 	public constructor(
 		side: PriceAxisWidgetSide,
-		options: ChartOptionsInternal,
+		options: ChartOptionsBase,
 		params: PriceAxisStubParams,
 		borderVisible: BorderVisibleGetter,
 		bottomColor: ColorGetter
@@ -64,6 +64,7 @@ export class PriceAxisStub implements IDestroyable {
 
 	public destroy(): void {
 		this._canvasBinding.unsubscribeSuggestedBitmapSizeChanged(this._canvasSuggestedBitmapSizeChangedHandler);
+		releaseCanvas(this._canvasBinding.canvasElement);
 		this._canvasBinding.dispose();
 	}
 
