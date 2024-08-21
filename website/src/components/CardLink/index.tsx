@@ -9,7 +9,7 @@ function CardContainer({
 	children,
 }: {
 	href: string;
-	children: ReactNode;
+	children: any;
 }): React.JSX.Element {
 	return (
 		<Link

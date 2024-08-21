@@ -1,3 +1,7 @@
+/*
+	End result should have a purple histogram bar (value of 499) as
+	the last visible bar.
+*/
 function generateData() {
 	const colors = [
 		'#013370',
@@ -20,10 +24,9 @@ function generateData() {
 }
 
 function runTestCase(container) {
-	const chart = window.chart = LightweightCharts.createChart(container);
+	const chart = window.chart = LightweightCharts.createChart(container, { layout: { attributionLogo: false } });
 
 	const mainSeries = chart.addHistogramSeries({
-		lineWidth: 1,
 		color: '#ff0000',
 	});
 

@@ -1,12 +1,13 @@
 import { CustomPriceLine } from '../../model/custom-price-line';
-import { Series } from '../../model/series';
+import { ISeries } from '../../model/series';
+import { SeriesType } from '../../model/series-options';
 
 import { SeriesHorizontalLinePaneView } from './series-horizontal-line-pane-view';
 
 export class CustomPriceLinePaneView extends SeriesHorizontalLinePaneView {
 	public priceLine: CustomPriceLine;
 
-	public constructor(series: Series, priceLine: CustomPriceLine) {
+	public constructor(series: ISeries<SeriesType>, priceLine: CustomPriceLine) {
 		super(series);
 		this.priceLine = priceLine;
 	}

@@ -8,6 +8,7 @@ on:
       - '.github/workflows/deploy.yml'
       - 'src/**'
       - 'website/**'
+      - 'plugin-examples/src/**'
 
 jobs:
   deploy:
@@ -19,12 +20,12 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '18'
 
       - name: Install library dependencies
         run: npm install
@@ -36,9 +37,18 @@ jobs:
       - name: Build documentation website
         working-directory: ./website
         run: npm run build
+      - name: Install plugin example dependencies
+        working-directory: ./plugin-examples
+        run: npm install
+      - name: Build plugin examples website
+        working-directory: ./plugin-examples
+        run: npm run build:examples:site
+      - name: Build plugin examples website
+        working-directory: ./plugin-examples
+        run: npm run build:examples:site
 
       - name: Deploy
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         if: ${{ github.ref == 'refs/heads/master' }}
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -8,10 +8,12 @@ import styles from './styles.module.css';
 
 interface ChartProps {
 	script: string;
+	iframeStyle?: React.CSSProperties;
 }
 
 type IFrameWindow<TVersion extends keyof LightweightChartsApiTypeMap> = Window & {
 	createChart: LightweightChartsApiTypeMap[TVersion]['createChart'];
+	createChartEx: TVersion extends '4.2' | '4.1' | 'current' ? LightweightChartsApiTypeMap[TVersion]['createChartEx'] : undefined;
 	run?: () => void;
 };
 
@@ -37,7 +39,7 @@ function getSrcDocWithScript(script: string): string {
 }
 
 export function Chart<TVersion extends keyof LightweightChartsApiTypeMap>(props: ChartProps): React.JSX.Element {
-	const { script } = props;
+	const { script, iframeStyle } = props;
 	const { preferredVersion } = useDocsPreferredVersion() as { preferredVersion: (PropVersionMetadata & { name: string }) | null };
 	const currentVersion = versions && versions.length > 0 ? versions[0] : '';
 	const version = (preferredVersion?.name ?? currentVersion ?? 'current') as TVersion;
@@ -56,10 +58,11 @@ export function Chart<TVersion extends keyof LightweightChartsApiTypeMap>(props:
 
 			const injectCreateChartAndRun = async () => {
 				try {
-					const { module, createChart } = await importLightweightChartsVersion[version](iframeWindow);
+					const { module, createChart, createChartEx } = await importLightweightChartsVersion[version](iframeWindow);
 
 					Object.assign(iframeWindow, module); // Make ColorType, etc. available in the iframe
 					iframeWindow.createChart = createChart;
+					iframeWindow.createChartEx = createChartEx;
 					iframeWindow.run?.();
 				} catch (err: unknown) {
 					// eslint-disable-next-line no-console
@@ -89,6 +92,7 @@ export function Chart<TVersion extends keyof LightweightChartsApiTypeMap>(props:
 			ref={ref}
 			srcDoc={srcDoc}
 			className={styles.iframe}
+			style={iframeStyle}
 		/>
 	);
 }
