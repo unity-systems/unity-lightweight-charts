@@ -188,6 +188,11 @@ export function drawRoundRectWithBorder(
 	}
 
 	if (borderColor !== 'transparent') {
+		const offsetRight = closeButton ? ADD_BUTTON_SIZE + dragHandleSize + 1 : 0;
+		const fixedWidth = closeButton ? width + dragHandleSize : width;
+		const outerRadii = changeBorderRadius(outerBorderRadius, - halfBorderWidth);
+		drawRoundRect(ctx, left + halfBorderWidth - offsetRight, top + halfBorderWidth, fixedWidth - borderWidth, height - borderWidth, outerRadii);
+
 		ctx.lineWidth = borderWidth;
 		ctx.strokeStyle = borderColor;
 		ctx.closePath();
